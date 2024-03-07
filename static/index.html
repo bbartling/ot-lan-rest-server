@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Rust + WASM + FastAPI Demo</title>
+    <script type="module">
+        import init, { login, fetch_users } from './pkg/rust_wasm_module.js';
+
+        async function performLogin(event) {
+            event.preventDefault();
+            const username = document.getElementById("loginUsername").value;
+            const password = document.getElementById("loginPassword").value;
+
+            try {
+                const result = await login(username, password);
+                console.log("Login successful:", result);
+                alert("Login successful!");
+                displayUsers(); // Call display users after successful login
+            } catch (err) {
+                console.error("Login failed:", err);
+                alert("Login failed.");
+            }
+        }
+
+        async function displayUsers() {
+            const users = await fetch_users();
+            const usersList = document.getElementById("usersList");
+            usersList.innerHTML = ""; // Clear existing list
+            users.forEach(user => {
+                const li = document.createElement("li");
+                li.textContent = `${user.username} - ${user.email}`;
+                usersList.appendChild(li);
+            });
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            document.getElementById("loginForm").addEventListener("submit", performLogin);
+            init().then(() => {
+                // Optionally, fetch and display users immediately after WASM is initialized
+                // displayUsers();
+            });
+        });
+    </script>
+</head>
+<body>
+    <h1>Rust, Wasm, and FastAPI Integration</h1>
+
+    <!-- Login Form -->
+    <form id="loginForm">
+        <input type="text" id="loginUsername" placeholder="Username" required><br>
+        <input type="password" id="loginPassword" placeholder="Password" required><br>
+        <button type="submit">Login</button>
+    </form>
+
+    <!-- Users List -->
+    <h2>Users</h2>
+    <ul id="usersList">
+        <!-- Users will be listed here -->
+    </ul>
+</body>
+</html>
