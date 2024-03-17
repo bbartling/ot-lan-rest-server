@@ -51,7 +51,7 @@ from typing import Optional, Union
 class WritePropertyRequest(BaseModel):
     device_instance: int
     object_identifier: str
-    property_identifier: int
+    property_identifier: str
     value: Optional[Union[float, int, str]]
     priority: Optional[conint(ge=1, le=16)] = None
 
@@ -88,7 +88,7 @@ async def hello_world():
     return RedirectResponse("/docs")
 
 
-@app.get("/config")
+@app.get("/bacpypes/config")
 async def config():
     """
     Return the configuration as JSON.
@@ -104,7 +104,7 @@ async def config():
     return {"BACpypes": dict(settings), "application": object_list}
 
 
-@app.get("/{device_instance}")
+@app.get("/bacnet/whois/{device_instance}")
 async def who_is(device_instance: int, address: Optional[str] = None):
     """
     Send out a Who-Is request and return the I-Am messages.
@@ -213,7 +213,7 @@ async def _read_property(
 
 
 async def _write_property(
-    address: Address,
+    device_instance: int,
     object_identifier: ObjectIdentifier,
     property_identifier: str,
     value: str,
@@ -225,14 +225,25 @@ async def _write_property(
     """
     global service
 
-    _log.debug(
-        "do_write %r %r %r %r %r",
-        address,
-        object_identifier,
-        property_identifier,
-        value,
-        priority,
-    )
+    device_address: Address
+    device_info = service.device_info_cache.instance_cache.get(device_instance, None)
+    if device_info:
+        device_address = device_info.device_address
+        _log.debug("    - cached address: %r", device_address)
+    else:
+        # returns a list, there should be only one
+        i_ams = await service.who_is(device_instance, device_instance)
+        if not i_ams:
+            raise HTTPException(
+                status_code=400, detail=f"device not found: {device_instance}"
+            )
+        if len(i_ams) > 1:
+            raise HTTPException(
+                status_code=400, detail=f"multiple devices: {device_instance}"
+            )
+
+        device_address = i_ams[0].pduSource
+        _log.debug("    - i-am response: %r", device_address)
 
     # 'property[index]' matching
     property_index_re = re.compile(r"^([A-Za-z-]+)(?:\[([0-9]+)\])?$")
@@ -251,9 +262,37 @@ async def _write_property(
             return "Error, null is only for overrides"
         value = Null(())
 
+    if _debug:
+        _log.debug(
+            "do_write %s %s %s %s %s %s",
+            device_address,
+            object_identifier,
+            property_identifier,
+            value,
+            property_array_index,
+            priority,
+        )
+
+        # do_write <RemoteStation 12345:2> (<ObjectType: analog-value>, 301) 'present-value' '25.0' 10
+        _log.debug(
+            "do_write types %s %s %s %s %s %s",
+            type(device_address),
+            type(object_identifier),
+            type(property_identifier),
+            type(value),
+            type(property_array_index),
+            type(priority),
+        )
+
+    try:
+        object_identifier = ObjectIdentifier(object_identifier)
+    except ErrorRejectAbortNack as err:
+        _log.error("    - exception on point ObjectIdentifier conversion: %r", err)
+        return str(err)
+    
     try:
         response = await service.write_property(
-            address,
+            device_address,
             object_identifier,
             property_identifier,
             value,
@@ -265,36 +304,38 @@ async def _write_property(
         return response
 
     except ErrorRejectAbortNack as err:
-        _log.debug("    - exception: %r", err)
+        _log.error("    - exception: %r", err)
         return str(err)
 
 
-@app.get("/{device_instance}/{object_identifier}")
+@app.get("/bacnet/{device_instance}/{object_identifier}")
 async def read_present_value(device_instance: int, object_identifier: str):
     """
     Read the `present-value` property from an object.
     """
-    _log.debug("read_present_value %r %r", device_instance, object_identifier)
+    if _debug:
+        _log.debug("read_present_value %r %r", device_instance, object_identifier)
 
     return await _read_property(device_instance, object_identifier, "present-value")
 
 
-@app.get("/{device_instance}/{object_identifier}/{property_identifier}")
+@app.get("/bacnet/{device_instance}/{object_identifier}/{property_identifier}")
 async def read_property(
     device_instance: int, object_identifier: str, property_identifier: str
 ):
     """
     Read a property from an object.
     """
-    _log.debug("read_present_value %r %r", device_instance, object_identifier)
+    if _debug:
+        _log.debug("read_present_value %r %r", device_instance, object_identifier)
 
     return await _read_property(device_instance, object_identifier, property_identifier)
 
 
 @app.post("/bacnet/write")
 async def bacnet_write_property(request: WritePropertyRequest):
-    # Now `request` is an instance of `WritePropertyRequest` with all data validated and parsed
-    _log.debug("Parsed request data: %s", request.dict())
+    if _debug:
+        _log.debug("Parsed request data: %s", request.model_dump())
 
     # Access model attributes directly
     device_instance = request.device_instance
@@ -303,13 +344,13 @@ async def bacnet_write_property(request: WritePropertyRequest):
     value = request.value
     priority = request.priority
 
-    # Here, insert the logic to handle the writing process using the extracted values.
-    # For demonstration, let's just log the received values.
-    _log.debug("Device Instance: %s", device_instance)
-    _log.debug("Object Identifier: %s", object_identifier)
-    _log.debug("Property Identifier: %s", property_identifier)
-    _log.debug("Value: %s", value)
-    _log.debug("Priority: %s", priority)
+    if _debug:
+        _log.debug(" Device Instance: %s", device_instance)
+        _log.debug(" Object Identifier: %s", object_identifier)
+        _log.debug(" Property Identifier: %s", property_identifier)
+        _log.debug(" Value: %s", value)
+        _log.debug(" Priority: %s", priority)
+
 
     try:
         write_result = await _write_property(
@@ -318,8 +359,26 @@ async def bacnet_write_property(request: WritePropertyRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    return {"success": True, "message": "Property write request received"}
+    data = {
+            "device_instance": device_instance,
+            "object_identifier": object_identifier,
+            "property_identifier": property_identifier,
+            "written_value": value,
+            "priority": priority
+    }
 
+    if write_result is None:
+        success = True
+        message = "BACnet write request successfully invoked"
+    else:
+        success = False
+        message = write_result
+
+    return {
+        "success": success,
+        "message": message,
+        "data": data
+    }
 
 
 async def main() -> None:
