@@ -51,27 +51,29 @@ If successful should return:
   "data": {
     "device_instance": 201201,
     "object_identifier": "analog-input,2",
-    "property_identifier": "out-of-service",
-    "read_result": false
+    "property_identifier": "present-value",
+    "read_result": 69.42999267578125
+  }
 }
 
 ```
 
-Read property of a different property_identifier which can be unique to the BACnet device. TODO see bacpypes3 folder...
+Read property of a different property_identifier which can be unique to the BACnet device. See bacpypes3 repo basetypes.py for more info:
+https://github.com/JoelBender/BACpypes3/blob/main/bacpypes3/basetypes.py
 
 ![Alt text](/read_prop.JPG)
 
 If successful should return:
 ```bash
 {
-  "success": false,
-  "message": "property: write-access-denied",
+  "success": true,
+  "message": "BACnet read request successfully invoked",
   "data": {
     "device_instance": 201201,
-    "object_identifier": "analog-value,300",
-    "property_identifier": "present-value",
-    "written_value": 10,
-    "priority": 10
+    "object_identifier": "analog-input,2",
+    "property_identifier": "out-of-service",
+    "read_result": false
+  }
 }
 
 ```
@@ -90,6 +92,7 @@ If successful should return:
     "property_identifier": "present-value",
     "written_value": 10,
     "priority": 10
+  }
 }
 ```
 
@@ -108,6 +111,7 @@ If successful should return:
     "property_identifier": "present-value",
     "written_value": "null",
     "priority": 10
+  }
 }
 ```
 
