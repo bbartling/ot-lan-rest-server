@@ -26,7 +26,7 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, JSONResponse
 
 from bacpypes3.debugging import ModuleLogger
 from bacpypes3.argparse import SimpleArgumentParser
@@ -45,16 +45,26 @@ from bacpypes3.json.util import (
     extendedlist_to_json_list,
 )
 
-from pydantic import BaseModel, conint
-from typing import Optional, Union
+from pydantic import BaseModel, conint, validator
+from typing import Union, Optional
+
+class BaseResponse(BaseModel):
+    success: bool
+    message: str
+    data: dict = None
 
 class WritePropertyRequest(BaseModel):
     device_instance: int
     object_identifier: str
     property_identifier: str
-    value: Optional[Union[float, int, str]]
+    value: Union[float, int, str]
     priority: Optional[conint(ge=1, le=16)] = None
 
+    @validator('property_identifier')
+    def validate_property_identifier(cls, v):
+        if not re.match(r"^([A-Za-z-]+)(?:\[([0-9]+)\])?$", v):
+            raise ValueError("property_identifier is invalid")
+        return v
 
 # some debugging
 _debug = 0
@@ -79,6 +89,12 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"success": False, "message": str(exc.detail), "data": None},
+    )
 
 @app.get("/")
 async def hello_world():
@@ -86,7 +102,6 @@ async def hello_world():
     Redirect to the documentation.
     """
     return RedirectResponse("/docs")
-
 
 @app.get("/bacpypes/config")
 async def config():
@@ -102,7 +117,6 @@ async def config():
         object_list.append(sequence_to_json(obj))
 
     return {"BACpypes": dict(settings), "application": object_list}
-
 
 @app.get("/bacnet/whois/{device_instance}")
 async def who_is(device_instance: int, address: Optional[str] = None):
@@ -133,20 +147,126 @@ async def who_is(device_instance: int, address: Optional[str] = None):
 
     return result
 
+@app.get("/bacnet/{device_instance}/{object_identifier}")
+@app.get("/bacnet/{device_instance}/{object_identifier}/{property_identifier}")
+async def read_bacnet_property(device_instance: int, object_identifier: str, property_identifier: str = None):
+    """
+    Read a BACnet property from an object.
+    """
+    if _debug:
+        _log.debug("read_bacnet_property %r %r %r", device_instance, object_identifier, property_identifier)
+
+    # Set property_identifier to "present-value" if it's not provided
+    if property_identifier is None:
+        property_identifier = "present-value"
+
+    read_result = None
+    encoded_value = None
+    try:
+        read_result = await _read_property(device_instance, object_identifier, property_identifier)
+
+        if isinstance(read_result, tuple):
+            _, encoded_value = read_result
+            success = True
+            message = "BACnet read request successfully invoked"
+        else:
+            success = False
+            message = read_result  # Some bacpypes error string
+
+    except Exception as e:  # Catch-all for unexpected errors
+        _log.error(f"Unexpected error during read operation: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=read_result
+        )
+
+    # Constructing the response data
+    response_data = {
+        "device_instance": device_instance,
+        "object_identifier": object_identifier,
+        "property_identifier": property_identifier,
+        "read_result": encoded_value,
+    }
+
+    # Constructing and returning the response
+    response = BaseResponse(
+        success=success,
+        message=message,
+        data=response_data
+    )
+    return response
+
+
+@app.post("/bacnet/write", response_model=BaseResponse)
+async def bacnet_write_property(request: WritePropertyRequest):
+    if _debug:
+        _log.debug(f"Parsed BACnet POST data: {request.model_dump_json()}")
+
+    # Extracting the request data
+    device_instance = request.device_instance
+    object_identifier = request.object_identifier
+    property_identifier = request.property_identifier
+    value = request.value
+    priority = request.priority
+
+    if _debug:
+        _log.debug(f"Device Instance: {device_instance}")
+        _log.debug(f"Object Identifier: {object_identifier}")
+        _log.debug(f"Property Identifier: {property_identifier}")
+        _log.debug(f"Value: {value}")
+        _log.debug(f"Priority: {priority}")
+
+    write_result = None
+    try:
+        write_result = await _write_property(
+            device_instance=device_instance,
+            object_identifier=object_identifier,
+            property_identifier=property_identifier,
+            value=value,
+            priority=priority
+        )
+
+        if write_result is None:
+            success = True
+            message = "BACnet write request successfully invoked"
+        else:
+            success = False
+            message = write_result #some bacpypes error string
+    except Exception as e:  # Catch-all for unexpected errors
+        _log.error(f"Unexpected error during write operation: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail= write_result
+        )
+
+    # Constructing the response data
+    response_data = {
+        "device_instance": device_instance,
+        "object_identifier": object_identifier,
+        "property_identifier": property_identifier,
+        "written_value": value,
+        "priority": priority
+    }
+
+    # Constructing and returning the response
+    response = BaseResponse(
+        success=success,
+        message=message,
+        data=response_data
+    )
+    return response
+
 
 def nan_or_inf_check(encoded_value):
         # check for NaN
     if isinstance(encoded_value, float) and math.isnan(encoded_value):
         return "NaN"
-
     # Check for positive infinity
     elif isinstance(encoded_value, float) and math.isinf(encoded_value) and encoded_value > 0:
         return "Inf"
-
     # Check for negative infinity
     elif isinstance(encoded_value, float) and math.isinf(encoded_value) and encoded_value < 0:
         return "-Inf"
-
     else:
         return encoded_value
 
@@ -160,25 +280,7 @@ async def _read_property(
     _log.debug("_read_property %r %r", device_instance, object_identifier)
     global service
 
-    device_address: Address
-    device_info = service.device_info_cache.instance_cache.get(device_instance, None)
-    if device_info:
-        device_address = device_info.device_address
-        _log.debug("    - cached address: %r", device_address)
-    else:
-        # returns a list, there should be only one
-        i_ams = await service.who_is(device_instance, device_instance)
-        if not i_ams:
-            raise HTTPException(
-                status_code=400, detail=f"device not found: {device_instance}"
-            )
-        if len(i_ams) > 1:
-            raise HTTPException(
-                status_code=400, detail=f"multiple devices: {device_instance}"
-            )
-
-        device_address = i_ams[0].pduSource
-        _log.debug("    - i-am response: %r", device_address)
+    device_address = await get_device_address(device_instance)
 
     try:
         property_value = await service.read_property(
@@ -188,8 +290,12 @@ async def _read_property(
             _log.debug("    - property_value: %r", property_value)
     except ErrorRejectAbortNack as err:
         if _debug:
-            _log.debug("    - exception: %r", err)
-        raise HTTPException(status_code=400, detail=f"error/reject/abort: {err}")
+            _log.error("    - exception: %r", err)
+        return f" BACnet error/reject/abort: {err}"
+    except ValueError as ve:
+        if _debug:
+            _log.error("    - exception: %r", ve)
+        return f" BACnet value error: {ve}"
 
     if isinstance(property_value, AnyAtomic):
         if _debug:
@@ -203,87 +309,28 @@ async def _read_property(
     elif isinstance(property_value, (Array, List)):
         encoded_value = extendedlist_to_json_list(property_value)
     else:
-        raise HTTPException(status_code=400, detail=f"JSON encoding: {property_value}")
+        return f"JSON encoding: {property_value}"
     if _debug:
         _log.debug("    - encoded_value: %r", encoded_value)
         _log.debug("    - type encoded_value ", type(encoded_value))
 
     encoded_value = nan_or_inf_check(encoded_value)
-    return {property_identifier: encoded_value}
+    return property_identifier, encoded_value
 
 
-async def _write_property(
-    device_instance: int,
-    object_identifier: ObjectIdentifier,
-    property_identifier: str,
-    value: str,
-    priority: int = -1,
-) -> None:
+async def _write_property(device_instance: int, object_identifier: ObjectIdentifier,
+                          property_identifier: str, value: str, priority: int = -1):
     """
-    usage: write address objid prop[indx] value [ priority ]
-
+    Write a property from an object.
     """
-    global service
-
-    device_address: Address
-    device_info = service.device_info_cache.instance_cache.get(device_instance, None)
-    if device_info:
-        device_address = device_info.device_address
-        _log.debug("    - cached address: %r", device_address)
-    else:
-        # returns a list, there should be only one
-        i_ams = await service.who_is(device_instance, device_instance)
-        if not i_ams:
-            raise HTTPException(
-                status_code=400, detail=f"device not found: {device_instance}"
-            )
-        if len(i_ams) > 1:
-            raise HTTPException(
-                status_code=400, detail=f"multiple devices: {device_instance}"
-            )
-
-        device_address = i_ams[0].pduSource
-        _log.debug("    - i-am response: %r", device_address)
-
-    # 'property[index]' matching
-    property_index_re = re.compile(r"^([A-Za-z-]+)(?:\[([0-9]+)\])?$")
-
-    # split the property identifier and its index
-    property_index_match = property_index_re.match(property_identifier)
-    if not property_index_match:
-        return "property specification incorrect"
-
-    property_identifier, property_array_index = property_index_match.groups()
-    if property_array_index is not None:
-        property_array_index = int(property_array_index)
-
+        
+    device_address = await get_device_address(device_instance)
+    property_identifier, property_array_index = parse_property_identifier(property_identifier)
     if value == "null":
         if priority is None:
-            return "Error, null is only for overrides"
+            return " BACnet Error, null is only for releasing overrides and requires a priority to release that override"
         value = Null(())
-
-    if _debug:
-        _log.debug(
-            "do_write %s %s %s %s %s %s",
-            device_address,
-            object_identifier,
-            property_identifier,
-            value,
-            property_array_index,
-            priority,
-        )
-
-        # do_write <RemoteStation 12345:2> (<ObjectType: analog-value>, 301) 'present-value' '25.0' 10
-        _log.debug(
-            "do_write types %s %s %s %s %s %s",
-            type(device_address),
-            type(object_identifier),
-            type(property_identifier),
-            type(value),
-            type(property_array_index),
-            type(priority),
-        )
-
+    
     try:
         object_identifier = ObjectIdentifier(object_identifier)
     except ErrorRejectAbortNack as err:
@@ -292,94 +339,39 @@ async def _write_property(
     
     try:
         response = await service.write_property(
-            device_address,
-            object_identifier,
-            property_identifier,
-            value,
-            property_array_index,
-            priority,
+            device_address, object_identifier, property_identifier, value,
+            property_array_index, priority
         )
-
         _log.debug("    - response: %r", response)
         return response
-
     except ErrorRejectAbortNack as err:
         _log.error("    - exception: %r", err)
         return str(err)
 
-
-@app.get("/bacnet/{device_instance}/{object_identifier}")
-async def read_present_value(device_instance: int, object_identifier: str):
-    """
-    Read the `present-value` property from an object.
-    """
-    if _debug:
-        _log.debug("read_present_value %r %r", device_instance, object_identifier)
-
-    return await _read_property(device_instance, object_identifier, "present-value")
-
-
-@app.get("/bacnet/{device_instance}/{object_identifier}/{property_identifier}")
-async def read_property(
-    device_instance: int, object_identifier: str, property_identifier: str
-):
-    """
-    Read a property from an object.
-    """
-    if _debug:
-        _log.debug("read_present_value %r %r", device_instance, object_identifier)
-
-    return await _read_property(device_instance, object_identifier, property_identifier)
-
-
-@app.post("/bacnet/write")
-async def bacnet_write_property(request: WritePropertyRequest):
-    if _debug:
-        _log.debug("Parsed request data: %s", request.model_dump())
-
-    # Access model attributes directly
-    device_instance = request.device_instance
-    object_identifier = request.object_identifier
-    property_identifier = request.property_identifier
-    value = request.value
-    priority = request.priority
-
-    if _debug:
-        _log.debug(" Device Instance: %s", device_instance)
-        _log.debug(" Object Identifier: %s", object_identifier)
-        _log.debug(" Property Identifier: %s", property_identifier)
-        _log.debug(" Value: %s", value)
-        _log.debug(" Priority: %s", priority)
-
-
-    try:
-        write_result = await _write_property(
-            device_instance, object_identifier, property_identifier, value, priority
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-    data = {
-            "device_instance": device_instance,
-            "object_identifier": object_identifier,
-            "property_identifier": property_identifier,
-            "written_value": value,
-            "priority": priority
-    }
-
-    if write_result is None:
-        success = True
-        message = "BACnet write request successfully invoked"
+async def get_device_address(device_instance: int) -> Address:
+    device_info = service.device_info_cache.instance_cache.get(device_instance, None)
+    if device_info:
+        device_address = device_info.device_address
+        _log.debug("    - cached address: %r", device_address)
     else:
-        success = False
-        message = write_result
+        i_ams = await service.who_is(device_instance, device_instance)
+        if not i_ams:
+            return f"Device not found: {device_instance}"
+        if len(i_ams) > 1:
+            return f"Multiple devices found: {device_instance}"
+        device_address = i_ams[0].pduSource
+        _log.debug("    - i-am response: %r", device_address)
+    return device_address
 
-    return {
-        "success": success,
-        "message": message,
-        "data": data
-    }
 
+def parse_property_identifier(property_identifier: str):
+    property_index_re = re.compile(r"^([A-Za-z-]+)(?:\[([0-9]+)\])?$")
+    property_index_match = property_index_re.match(property_identifier)
+    if not property_index_match:
+        return "Property specification incorrect"
+    property_identifier, property_array_index = property_index_match.groups()
+    property_array_index = int(property_array_index) if property_array_index is not None else None
+    return property_identifier, property_array_index
 
 async def main() -> None:
     global app, args
