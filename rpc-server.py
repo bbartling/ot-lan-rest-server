@@ -25,7 +25,7 @@ import uvicorn
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.responses import RedirectResponse, JSONResponse
 
 from bacpypes3.debugging import ModuleLogger
@@ -47,6 +47,8 @@ from bacpypes3.json.util import (
 
 from pydantic import BaseModel, conint, validator
 from typing import Union, Optional
+
+
 
 class BaseResponse(BaseModel):
     success: bool
@@ -147,18 +149,19 @@ async def who_is(device_instance: int, address: Optional[str] = None):
 
     return result
 
-@app.get("/bacnet/{device_instance}/{object_identifier}")
-@app.get("/bacnet/{device_instance}/{object_identifier}/{property_identifier}")
-async def read_bacnet_property(device_instance: int, object_identifier: str, property_identifier: str = None):
+
+
+@app.get("/bacnet/{device_instance}/{object_identifier}/")
+async def read_bacnet_property(
+    device_instance: int, 
+    object_identifier: str, 
+    property_identifier: Optional[str] = Query("present-value", description="Optional. The property identifier to read.")
+):
     """
     Read a BACnet property from an object.
     """
     if _debug:
         _log.debug("read_bacnet_property %r %r %r", device_instance, object_identifier, property_identifier)
-
-    # Set property_identifier to "present-value" if it's not provided
-    if property_identifier is None:
-        property_identifier = "present-value"
 
     read_result = None
     encoded_value = None
