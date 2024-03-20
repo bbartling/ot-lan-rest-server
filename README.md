@@ -9,12 +9,12 @@ $ python -m pip install bacpypes3 ifaddr fastapi uvicorn
 
 ```
 
-### Example args to run app on http with setting custom `host`, `port`, and `debug` mode.
+#### Example args to run app on http with setting custom `host`, `port`, and `debug` mode.
 ```bash
 $ python rpc-server.py --host 0.0.0.0 --port 8080  --debug
 ```
 
-### Example args to run app on http with setting Basic Auth username for the app of `myusername` and password of `mypassword`. Default app username and pass is `admin` and `secret` which should be changed for security purposes.
+#### Example args to run app on http with setting Basic Auth username for the app of `myusername` and password of `mypassword`. Default app username and pass is `admin` and `secret` which should be changed for security purposes.
 
 ```bash
 $ python rpc-server.py --basic-auth-username=myusername --basic-auth-password=mypassword
@@ -31,7 +31,7 @@ Generate certs with running the bash script inside the `scripts` directory. Step
 $ ./scripts/generate_certs.sh
 ```
 
-### Example arg to run app with transport layer security (TLS)
+#### Example arg to run app with transport layer security (TLS)
 ```bash
 $ python rpc-server.py --tls
 ```
@@ -44,7 +44,8 @@ https://192.168.0.102:5000/docs
 Proceed to then enter your credentials for the `Authorize` in the Swagger UI.
 
 
-## tutorial via Swagger UI
+<details>
+  <summary>Tutorial via Swagger UI</summary>
 
 When the app starts successfully dial into the built in Swagger UI feature of Fast API which can be used to test various BACnet commands.
 
@@ -141,11 +142,24 @@ If successful should return:
   }
 }
 ```
+</details>
 
-TODO on implementing future:
-* whois POST request for a range of instance ID's
-* read multiple request
-* point discovery
-* who is router-to-network
-* read point proirity array
-* read range for BACnet devices that support trend log data
+
+TODO on implementing future BACnet features:
+ - [ ] whois POST request for a range of instance ID's
+ - [ ] read multiple request
+ - [ ] point discovery
+ - [ ] who is router-to-network
+ - [ ] read point proirity array
+ - [ ] read range for BACnet devices that support trend log data
+
+## License:
+【MIT License】
+
+Copyright 2024 Ben Bartling
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
