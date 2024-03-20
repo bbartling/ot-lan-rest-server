@@ -1,7 +1,7 @@
 # bacpypes3RcpServer
 
 
-This dedicated RPC server BACnet app with a web UI to read and write BACnet data to a building automation system (BAS) or some sort of BACnet device. This has been tested on a Raspberry Pi 3 Model B+ running [Armbian Jammy Linux](https://www.armbian.com/rpi4b/) with a CLI interface. Supports tls and Basic Auth through the Fast API web framework. This Linux app is meant to on a intranet or edge environment behind the firewall along side typical operations technology (OT) inside the building.
+This is a dedicated RPC server BACnet app with a web UI that also has "rest like" features to read and write BACnet data to and from a building automation system (BAS) or some sort of BACnet device operating on a LAN inside a building. This has been tested on a Raspberry Pi 3 Model B+ running [Armbian Jammy Linux](https://www.armbian.com/rpi4b/) with a CLI interface. Supports tls and Basic Auth through the Fast API web framework. This Linux app is meant to run on a intranet or edge environment behind the firewall along side typical operations technology (OT).
 
 ## Setup Python packages use virtual environment if desired.
 ```bash
@@ -24,8 +24,8 @@ If running your app on http without tls support log into swagger UI on:
 http://192.168.0.102:8000/docs
 
 
-## Optional TLS support for the Fast API web app for added security to ecprypte http traffic only, not BACnet...
-Generate certs with running the bash script inside the `scripts` directory. Step through the Q/A process for generating the self signed certs about inputing country code, organization, and contact info.
+## Optional TLS support
+To ecprypte http web app TCP traffic only, not BACnet which runs on UDP... Generate certs with running the bash script inside the `scripts` directory. Step through the Q/A process for generating the self signed certs about inputing country code, organization, and contact info.
 
 ```bash
 $ ./scripts/generate_certs.sh
@@ -152,14 +152,17 @@ TODO on implementing future BACnet features:
  - [ ] who is router-to-network
  - [ ] read point proirity array
  - [ ] read range for BACnet devices that support trend log data
+ - [ ] create unit tests
+ 
+## License
+MIT License
 
-## License:
-【MIT License】
-
-Copyright 2024 Ben Bartling
+Copyright (c) 2024 Ben Bartling
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+ADDITIONAL CYBERSECURITY NOTICE: Users are encouraged to apply the highest level of cybersecurity, OT, IoT, and IT measures when using this software. The authors and copyright holders disclaim any liability for cybersecurity breaches, mechanical equipment damage, financial damage, or loss of life arising from the use of the Software. Users assume full responsibility for ensuring the secure deployment and operation of the Software in their environments.
