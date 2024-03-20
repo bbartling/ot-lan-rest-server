@@ -17,7 +17,8 @@ $ python -m pip install bacpypes3 ifaddr fastapi uvicorn
 $ python rpc-server.py --host 0.0.0.0 --port 8080  --debug
 ```
 
-## Example args to run app on http with setting Basic Auth username and password.
+## Example args to run app on http with setting Basic Auth username for the app of `myusername` and password of `mypassword`. Default app username and pass is `admin` and `secret` which should be changed for security purposes.
+
 ```bash
 $ python rpc-server.py --basic-auth-username=myusername --basic-auth-password=mypassword
 ```
@@ -34,6 +35,15 @@ Step through the Q/A process for generating the self signed certs about inputing
 ```bash
 $ python rpc-server.py --tls
 ```
+
+If running your app with tls support log into the Fast API swagger UI:
+https://192.168.0.102:5000/docs
+
+If running your app on http without tls support log into swagger UI on:
+http://192.168.0.102:8000/docs
+
+Proceed to then enter your credentials for the `Authorize` in the Swagger UI.
+
 
 ## tutorial via Swagger
 
