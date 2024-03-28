@@ -11,13 +11,13 @@ $ python -m pip install bacpypes3 ifaddr fastapi uvicorn
 
 #### Example args to run app on http with setting custom `host`, `port`, and `debug` mode.
 ```bash
-$ python rpc-server.py --host 0.0.0.0 --port 8080  --debug
+$ python app/rpc-server.py --host 0.0.0.0 --port 8080  --debug
 ```
 
 #### Example args to run app on http with setting Basic Auth username for the app of `myusername` and password of `mypassword`. Default app username and pass is `admin` and `secret` which should be changed for security purposes.
 
 ```bash
-$ python rpc-server.py --basic-auth-username=myusername --basic-auth-password=mypassword
+$ python app/rpc-server.py --basic-auth-username=myusername --basic-auth-password=mypassword
 ```
 
 If running your app on http without tls support log into swagger UI on:
@@ -33,7 +33,7 @@ $ ./scripts/generate_certs.sh
 
 #### Example arg to run app with transport layer security (TLS)
 ```bash
-$ python rpc-server.py --tls
+$ python app/rpc-server.py --tls --debug
 ```
 
 If running your app with tls support log into the Fast API swagger UI:
@@ -153,6 +153,7 @@ TODO on implementing future BACnet features:
  - [ ] read point proirity array
  - [ ] read range for BACnet devices that support trend log data
  - [ ] create unit tests
+ - [ ] add ModBus support which would be used to read a utility meter only
  
 ## License
 MIT License

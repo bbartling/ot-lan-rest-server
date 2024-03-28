@@ -11,19 +11,8 @@ adds a `--host` and `--port` for the web service, and `--log-level` for
 uvicorn debugging.
 
 Run on default args
-$ python rpc-server.py
+$ python app/rpc-server.py --tls --debug
 
-Or specify
-$ python rpc-server.py --host 0.0.0.0 --debug --basic-auth-username=myusername --basic-auth-password=mypassword
-
-log into swagger UI on:
-http://192.168.0.102:8000/docs
-
-To use with tls run $ generate_certs.sh inside the certs directory and then start app with
-$ python rpc-server.py --tls
-
-log into swagger UI on https:
-https://192.168.0.102:5000/docs
 """
 from __future__ import annotations
 
@@ -57,27 +46,7 @@ from bacpypes3.json.util import (
     extendedlist_to_json_list,
 )
 
-from pydantic import BaseModel, conint, validator
-from typing import Union, Optional
-
-
-class BaseResponse(BaseModel):
-    success: bool
-    message: str
-    data: dict = None
-
-class WritePropertyRequest(BaseModel):
-    device_instance: int
-    object_identifier: str
-    property_identifier: str
-    value: Union[float, int, str]
-    priority: Optional[conint(ge=1, le=16)] = None
-
-    @validator('property_identifier')
-    def validate_property_identifier(cls, v):
-        if not re.match(r"^([A-Za-z-]+)(?:\[([0-9]+)\])?$", v):
-            raise ValueError("property_identifier is invalid")
-        return v
+from models import BaseResponse, WritePropertyRequest
 
 # some debugging
 _debug = 0
@@ -169,10 +138,19 @@ async def _write_property(device_instance: int, object_identifier: ObjectIdentif
     """
     Write a property from an object.
     """
-        
+
+    if _debug:
+        _log.debug(f" Write Prop Device Instance: {device_instance}")
+        _log.debug(f" Write Prop Object Identifier: {object_identifier}")
+        _log.debug(f" Write Prop Property Identifier: {property_identifier}")
+        _log.debug(f" Write Prop Value: {value}")
+        _log.debug(f" Write Prop Value Type {type(value)}")
+        _log.debug(f" Write Prop Priority: {priority}")
+
     device_address = await get_device_address(device_instance)
     property_identifier, property_array_index = parse_property_identifier(property_identifier)
     if value == "null":
+        _log.debug(f" Null hit! {type(value)}")
         if priority is None:
             return " BACnet Error, null is only for releasing overrides and requires a priority to release that override"
         value = Null(())
@@ -344,23 +322,26 @@ async def read_bacnet_property(
 
 
 @app.post("/bacnet/write", response_model=BaseResponse)
-async def bacnet_write_property(request: WritePropertyRequest, username: str = Depends(get_current_username)):
-    if _debug:
-        _log.debug(f"Parsed BACnet POST data: {request.model_dump_json()}")
+async def bacnet_write_property(request_body: WritePropertyRequest, request: Request, username: str = Depends(get_current_username)):
 
+    request = await request.json()
+
+    if _debug:
+        _log.debug(f"request Parsed BACnet POST data: {request}")
+    
     # Extracting the request data
-    device_instance = request.device_instance
-    object_identifier = request.object_identifier
-    property_identifier = request.property_identifier
-    value = request.value
-    priority = request.priority
+    device_instance = request['device_instance']
+    object_identifier = request['object_identifier']
+    property_identifier = request['property_identifier']
+    value = request['value']
+    priority = request['priority']
 
     if _debug:
-        _log.debug(f"Device Instance: {device_instance}")
-        _log.debug(f"Object Identifier: {object_identifier}")
-        _log.debug(f"Property Identifier: {property_identifier}")
-        _log.debug(f"Value: {value}")
-        _log.debug(f"Priority: {priority}")
+        _log.debug(f"Request Device Instance: {device_instance}")
+        _log.debug(f"Request Object Identifier: {object_identifier}")
+        _log.debug(f"Request Property Identifier: {property_identifier}")
+        _log.debug(f"Request Value: {value}")
+        _log.debug(f"Request Priority: {priority}")
 
     write_result = None
     try:
@@ -401,8 +382,6 @@ async def bacnet_write_property(request: WritePropertyRequest, username: str = D
         data=response_data
     )
     return response
-
-
 
 
 async def main() -> None:
@@ -446,13 +425,13 @@ async def main() -> None:
         "--ssl-certfile",
         type=str,
         help="Path to the SSL certificate file",
-        default="certs/certificate.pem"
+        default="./certs/certificate.pem"
     )
     parser.add_argument(
         "--ssl-keyfile",
         type=str,
         help="Path to the SSL key file",
-        default="certs/private.key"
+        default="./certs/private.key"
     )
 
     args = parser.parse_args()
