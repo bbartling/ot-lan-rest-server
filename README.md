@@ -152,7 +152,8 @@ TODO on implementing future BACnet features:
  - [ ] who is router-to-network
  - [ ] read point proirity array
  - [ ] read range for BACnet devices that support trend log data
- - [ ] create unit tests
+ - [x] create unit tests
+ - [x] add pydantic model validation for server requests
  - [ ] add ModBus support which would be used to read a utility meter only
  
 ## License

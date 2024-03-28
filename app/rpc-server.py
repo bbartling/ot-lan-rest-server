@@ -25,7 +25,7 @@ import uvicorn
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Request, Query, Depends, status
+from fastapi import FastAPI, HTTPException, Request, Query, Depends, status, Path
 from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
@@ -197,6 +197,27 @@ def parse_property_identifier(property_identifier: str):
     property_array_index = int(property_array_index) if property_array_index is not None else None
     return property_identifier, property_array_index
 
+async def validate_object_identifier(object_identifier: str):
+    try:
+        # Used on read request 
+        WritePropertyRequest.validate_object_identifier(object_identifier)
+        return object_identifier  # Return the validated identifier
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+async def validate_property_identifier(property_identifier: str = Query("present-value", description="Optional. The property identifier to read.")):
+    try:
+        # Used on read request 
+        if property_identifier:
+            WritePropertyRequest.validate_property_identifier(property_identifier)
+        return property_identifier
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+def validate_device_instance(device_instance: int = Path(..., ge=0, le=4194303, description="The device instance ID.")):
+    return device_instance
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -242,7 +263,9 @@ async def config(username: str = Depends(get_current_username)):
     return {"BACpypes": dict(settings), "application": object_list}
 
 @app.get("/bacnet/whois/{device_instance}")
-async def who_is(device_instance: int, address: Optional[str] = None, username: str = Depends(get_current_username)):
+async def who_is(device_instance: int = Depends(validate_device_instance),
+                 address: Optional[str] = None, 
+                 username: str = Depends(get_current_username)):
     """
     Send out a Who-Is request and return the I-Am messages.
     """
@@ -270,12 +293,12 @@ async def who_is(device_instance: int, address: Optional[str] = None, username: 
 
     return result
 
-
+    
 @app.get("/bacnet/{device_instance}/{object_identifier}/")
 async def read_bacnet_property(
-    device_instance: int, 
-    object_identifier: str, 
-    property_identifier: Optional[str] = Query("present-value", description="Optional. The property identifier to read."),
+    device_instance: int = Depends(validate_device_instance),
+    object_identifier: str = Depends(validate_object_identifier),
+    property_identifier: str = Depends(validate_property_identifier), 
     username: str = Depends(get_current_username)
 ):
     """
