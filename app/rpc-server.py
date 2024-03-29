@@ -11,7 +11,7 @@ adds a `--host` and `--port` for the web service, and `--log-level` for
 uvicorn debugging.
 
 Run on default args
-$ python app/rpc-server.py --tls --debug
+$ python app/rpc-server.py --tls --basic-auth-username=me --basic-auth-password=1234 --debug
 
 """
 from __future__ import annotations

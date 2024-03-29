@@ -19,7 +19,6 @@ class WritePropertyRequest(BaseModel):
     @field_validator('property_identifier')
     @classmethod
     def validate_property_identifier(cls, v):
-        
         valid_property_identifiers = set(PropertyIdentifier._enum_map.keys())
         if v not in valid_property_identifiers:
             raise ValueError(f"property_identifier '{v}' is not a valid BACnet property identifier")
@@ -38,9 +37,8 @@ class WritePropertyRequest(BaseModel):
 
         try:
             instance_number = int(instance_str)
-            if instance_number < 0:
-                raise ValueError("The instance number must be a positive integer")
-            elif instance_number > 10000:
-                raise ValueError("The instance number must be less than 10000")
+            # Validate instance_number within the new range
+            if not (0 < instance_number < (1 << 22) - 1):
+                raise ValueError("Instance number out of range")
         except ValueError as e:
             raise ValueError(f"Invalid instance number: {e}")
