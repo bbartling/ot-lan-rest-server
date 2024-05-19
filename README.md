@@ -1,7 +1,7 @@
 # bacpypes3RcpServer
 
 
-This is a dedicated RPC server BACnet app with a web UI that also has "rest like" features to read and write BACnet data to and from a building automation system (BAS) or some sort of BACnet device operating on a LAN inside a building. This has been tested on a Raspberry Pi 3 Model B+ running [Armbian Jammy Linux](https://www.armbian.com/rpi4b/) with a CLI interface. Supports tls and Basic Auth through the Fast API web framework. This Linux app is meant to run on a intranet or edge environment behind the firewall along side typical operations technology (OT).
+This is a dedicated RPC server BACnet app with a web UI that also has "rest like" features to read and write BACnet data to and from a building automation system (BAS) or some sort of BACnet device operating on a LAN inside a building. This has been tested on Linux with the CLI interface. Supports tls and Basic Auth through the Fast API web framework. This Linux app is meant to run on a intranet or edge environment behind the firewall along side typical operations technology (OT).
 
 ## Setup Python packages use virtual environment if desired.
 ```bash
