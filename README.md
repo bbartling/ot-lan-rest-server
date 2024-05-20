@@ -179,17 +179,46 @@ With json data in the body with multiple `object_identifier` and `property_ident
 }
 ```
 
-If successful should return:
+If successful should return this below. Note that is a property isnt defined inside your BACnet device it will
+come back as `error` but if the property does exist it will return a `value`.
 ```bash
 {
   "success": true,
-  "message": "BACnet write request successfully invoked",
+  "message": "BACnet rpm successfully invoked",
   "data": {
     "device_instance": 201201,
-    "object_identifier": "analog-value,301",
-    "property_identifier": "present-value",
-    "written_value": 10,
-    "priority": 10
+    "requests": [
+      {
+        "object_identifier": "analog-input,2",
+        "property_identifier": "present-value",
+        "value": "67.7199935913086"
+      },
+      {
+        "object_identifier": "analog-input,2",
+        "property_identifier": "units",
+        "value": "degrees-fahrenheit"
+      },
+      {
+        "object_identifier": "analog-input,2",
+        "property_identifier": "description",
+        "error": "property, unknown-property"
+      },
+      {
+        "object_identifier": "analog-value,301",
+        "property_identifier": "present-value",
+        "value": "nan"
+      },
+      {
+        "object_identifier": "analog-input,301",
+        "property_identifier": "units",
+        "error": "object, unknown-object"
+      },
+      {
+        "object_identifier": "analog-value,301",
+        "property_identifier": "description",
+        "error": "property, unknown-property"
+      }
+    ]
   }
 }
 ```
