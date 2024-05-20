@@ -1,22 +1,3 @@
-"""
-FastAPI based simple RPC server
-
-In addition to the BACpypes3 package, also install these packages:
-
-    fastapi
-    uvicorn[standard]
-
-This application takes all of the usual BACpypes command line arguments and
-adds a `--host` and `--port` for the web service, and `--log-level` for
-uvicorn debugging.
-
-Run on default args
-$ python app/rpc-server.py --tls --basic-auth-username=me --basic-auth-password=1234 --debug
-
-Dont forget to make certs with the bash script and when browsing into the app
-make sure you are browing is on the URL https if using the -tls arg
-
-"""
 from __future__ import annotations
 
 import asyncio
@@ -24,24 +5,21 @@ import os
 import math
 import re
 import argparse
-import uvicorn
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Optional, List, Tuple
 
-from fastapi import FastAPI, HTTPException, Request, Query, Depends, status, Path
+import uvicorn
+from fastapi import FastAPI, HTTPException, Request, Query, Depends, status, Path, Body
 from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from bacpypes3.debugging import ModuleLogger
 from bacpypes3.argparse import SimpleArgumentParser
-
 from bacpypes3.pdu import Address, GlobalBroadcast
-from bacpypes3.primitivedata import Atomic, ObjectIdentifier, Null
-from bacpypes3.constructeddata import Sequence, AnyAtomic, Array, List
-from bacpypes3.apdu import ErrorRejectAbortNack
+from bacpypes3.primitivedata import Atomic, ObjectIdentifier, Null, PropertyIdentifier, ObjectType
+from bacpypes3.constructeddata import Sequence, AnyAtomic, Array, List as BacpypesList
+from bacpypes3.apdu import ErrorRejectAbortNack, PropertyReference, ErrorType
 from bacpypes3.app import Application
-
-# for serializing the configuration
 from bacpypes3.settings import settings
 from bacpypes3.json.util import (
     atomic_encode,
@@ -49,7 +27,10 @@ from bacpypes3.json.util import (
     extendedlist_to_json_list,
 )
 
-from models import BaseResponse, WritePropertyRequest
+from bacpypes3.vendor import get_vendor_info
+
+from models import BaseResponse, WritePropertyRequest, ReadMultiplePropertiesRequest, ReadMultiplePropertiesRequestWrapper
+
 
 # some debugging
 _debug = 0
@@ -156,15 +137,15 @@ async def get_device_address(device_instance: int) -> Address:
     device_info = service.device_info_cache.instance_cache.get(device_instance, None)
     if device_info:
         device_address = device_info.device_address
-        _log.debug("    - cached address: %r", device_address)
+        _log.debug(f" gda - Cached address: {device_address}")
     else:
         i_ams = await service.who_is(device_instance, device_instance)
         if not i_ams:
-            return f"Device not found: {device_instance}"
+            raise ValueError(f" gda - Device not found: {device_instance}")
         if len(i_ams) > 1:
-            return f"Multiple devices found: {device_instance}"
+            raise ValueError(f" gda - Multiple devices found: {device_instance}")
         device_address = i_ams[0].pduSource
-        _log.debug("    - i-am response: %r", device_address)
+        _log.debug(f" gda - Resolved address: {device_address}")
     return device_address
 
 
@@ -187,7 +168,10 @@ async def validate_object_identifier(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-async def validate_property_identifier(property_identifier: str = Query("present-value", description="Default prop id of 'present-value' is inserted")):
+
+async def validate_property_identifier(
+    property_identifier: str = Query("present-value", description="Default prop id of 'present-value' is inserted")
+):
     try:
         if property_identifier:
             WritePropertyRequest.validate_property_identifier(property_identifier)
@@ -196,8 +180,11 @@ async def validate_property_identifier(property_identifier: str = Query("present
         raise HTTPException(status_code=400, detail=str(e))
 
 
-def validate_device_instance(device_instance: int = Path(..., ge=0, le=4194303, description="The device instance ID like '201201' for example")):
+def validate_device_instance(
+    device_instance: int = Path(..., ge=0, le=4194303, description="The device instance ID like '201201' for example")
+):
     return device_instance
+
 
 
 @asynccontextmanager
@@ -261,7 +248,7 @@ async def read_bacnet_property(
     property_identifier: str = Depends(validate_property_identifier), 
     username: str = Depends(get_current_username)
 ):
-    _log.debug("read_bacnet_property %r %r %r", device_instance, object_identifier, property_identifier)
+    _log.debug(" read - %r %r %r", device_instance, object_identifier, property_identifier)
 
     read_result = None
     try:
@@ -307,11 +294,11 @@ async def bacnet_write_property(request_body: WritePropertyRequest, request: Req
     value = request['value']
     priority = request['priority']
 
-    _log.debug(f"Request Device Instance: {device_instance}")
-    _log.debug(f"Request Object Identifier: {object_identifier}")
-    _log.debug(f"Request Property Identifier: {property_identifier}")
-    _log.debug(f"Request Value: {value}")
-    _log.debug(f"Request Priority: {priority}")
+    _log.debug(f" write - Device Instance: {device_instance}")
+    _log.debug(f" write - Object Identifier: {object_identifier}")
+    _log.debug(f" write - Property Identifier: {property_identifier}")
+    _log.debug(f" write - Value: {value}")
+    _log.debug(f" write - Priority: {priority}")
 
     try:
         write_result = await _write_property(
@@ -349,6 +336,167 @@ async def bacnet_write_property(request_body: WritePropertyRequest, request: Req
         data=response_data
     )
     return response
+    
+
+@app.post("/bacnet/read-multiple", response_model=BaseResponse)
+async def bacnet_read_multiple_properties(
+    request_body: ReadMultiplePropertiesRequestWrapper,
+    request: Request,
+    username: str = Depends(get_current_username)
+):
+
+    address = request_body.device_instance
+    _log.debug(f" rpm - for address: {address}")
+    _log.debug(f" rpm - with properties: {request_body.requests}")
+
+    # Transform the request data into a list of strings
+    args_list: List[str] = []
+    for req in request_body.requests:
+        args_list.append(req.object_identifier)
+        args_list.append(req.property_identifier)
+    
+    # Log the transformed list
+    _log.debug(f" rpm - Transformed args_list: {args_list}")
+
+    # get information about the device from the cache
+    device_info = await service.device_info_cache.get_device_info(address)
+
+    # using the device info, look up the vendor information
+    if device_info:
+        vendor_info = get_vendor_info(device_info.vendor_identifier)
+        bacnet_address = device_info.device_address
+    else:
+        # do a WhoIs I think
+        device_info = await get_device_address(address)
+        vendor_info = get_vendor_info(0)
+        bacnet_address = device_info
+        
+    _log.debug(f" rpm - device_info: {device_info}")
+    _log.debug(f" rpm - bacnet_address: {bacnet_address}")
+
+    parameter_list = []
+    while args_list:
+        # use the vendor information to translate the object identifier,
+        # then use the object type portion to look up the object class
+        object_identifier = vendor_info.object_identifier(args_list.pop(0))
+        object_class = vendor_info.get_object_class(object_identifier[0])
+        if not object_class:
+            _log.debug(f" rpm - unrecognized object type: {object_identifier}")
+            return BaseResponse(success=False, message=f"BACnet rpm failed - unrecognized object type: {object_identifier}", data=None)
+
+        # save this as a parameter
+        parameter_list.append(object_identifier)
+
+        property_reference_list = []
+        while args_list:
+            # use the vendor info to parse the property reference
+            property_reference = PropertyReference(
+                args_list.pop(0),
+                vendor_info=vendor_info,
+            )
+
+            #_log.debug(" rpm - property_reference: %r", property_reference)
+
+            if property_reference.propertyIdentifier not in (
+                PropertyIdentifier.all,
+                PropertyIdentifier.required,
+                PropertyIdentifier.optional,
+            ):
+                property_type = object_class.get_property_type(
+                    property_reference.propertyIdentifier
+                )
+                #_log.debug(" rpm - property_type: %r", property_type)
+                _log.debug(
+                    " rpm - property_reference.propertyIdentifier: %r",
+                    property_reference.propertyIdentifier,
+                )
+                if not property_type:
+                    _log.debug(
+                        f" rpm - unrecognized property: {property_reference.propertyIdentifier}"
+                    )
+                    return BaseResponse(success=False, message=f"BACnet rpm failed - unrecognized property: {property_reference.propertyIdentifier}", data=None)
+
+            # save this as a parameter
+            property_reference_list.append(property_reference)
+
+            # crude check to see if the next thing is an object identifier
+            if args_list and ((":" in args_list[0]) or ("," in args_list[0])):
+                break
+
+        # save this as a parameter
+        parameter_list.append(property_reference_list)
+
+    if not parameter_list:
+        _log.debug(" rpm - object identifier expected")
+        return BaseResponse(success=False, message=f"BACnet rpm failed - object identifier expected", data=None)
+
+    try:
+        response = await service.read_property_multiple(bacnet_address, parameter_list)
+    except ErrorRejectAbortNack as err:
+        _log.debug(" rpm - exception: %r", err)
+        return BaseResponse(success=False, message=f"BACnet rpm failed: {err}", data=None)
+
+    except ErrorRejectAbortNack as err:
+        _log.debug(f"rpm - exception: {err}")
+        return BaseResponse(success=False, message=f"BACnet rpm failed: {err}", data=None)
+
+    rpm_result = []
+    try:
+        if response:
+            for (
+                object_identifier,
+                property_identifier,
+                property_array_index,
+                property_value,
+            ) in response:
+                if property_array_index is not None:
+                    _log.debug(f"property_array_index is not None")
+                    _log.debug(
+                        f" rpm - {object_identifier} {property_identifier}[{property_array_index}] {property_value}"
+                    )
+                else:
+                    _log.debug(
+                        f" rpm - {object_identifier} {property_identifier} {property_value}"
+                    )
+                if isinstance(property_value, ErrorType):
+                    _log.debug(
+                        f" rpm - {property_value.errorClass}, {property_value.errorCode}"
+                    )
+                    rpm_result.append({
+                        "object_identifier": f"{object_identifier}",
+                        "property_identifier": f"{property_identifier}",
+                        "error": f"{property_value.errorClass}, {property_value.errorCode}"
+                    })
+                else:
+                    rpm_result.append({
+                        "object_identifier": f"{object_identifier}",
+                        "property_identifier": f"{property_identifier}",
+                        "value": f"{property_value}"
+                    })
+
+        if response:
+            success = True
+            message = "BACnet rpm successfully invoked"
+        else:
+            success = False
+            message = "BACnet rpm failed"
+    except Exception as e:
+        _log.error(f"Unexpected error during rpm operation: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Unexpected error during rpm operation"
+        )
+
+    response_data = {
+        "device_instance": request_body.device_instance,
+        "requests": rpm_result,
+    }
+
+    return BaseResponse(
+        success=success,
+        message=message,
+        data=response_data
+    )
 
 
 async def main() -> None:
