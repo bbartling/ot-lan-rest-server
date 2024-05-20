@@ -45,12 +45,16 @@ Proceed to then enter your credentials for the `Authorize` in the Swagger UI.
 
 
 <details>
-  <summary>Tutorial via Swagger UI</summary>
+  <summary>Tutorial for the Fast API Swagger UI</summary>
 
 When the app starts successfully dial into the built in Swagger UI feature of Fast API which can be used to test various BACnet commands.
 
 ![Alt text](/images/swagger_home.JPG)
 
+</details>
+
+<details>
+  <summary>Read Prop Tutorial via Swagger UI</summary>
 
 Test if the BACnet device responds to a `whois` for the devices BACnet instance ID.
 ![Alt text](/images/who_is.JPG)
@@ -105,6 +109,10 @@ If successful should return:
 }
 
 ```
+</details>
+
+<details>
+  <summary>Write Prop Tutorial via Swagger UI</summary>
 
 Write request to device `201201 analog-value 301 present-value` for a value of `10` on BACnet priority `10`.
 ![Alt text](/images/write_req1.JPG)
@@ -142,6 +150,11 @@ If successful should return:
   }
 }
 ```
+
+</details>
+
+<details>
+  <summary>Read Multiple Tutorial via Swagger UI</summary>
 
 A BACnet Read Multiple to device `201201` on a post request would look like this.
 ![Alt text](/images/rpm.JPG)
@@ -222,8 +235,6 @@ come back as `error` but if the property does exist it will return a `value`.
   }
 }
 ```
-
-
 </details>
 
 
