@@ -142,12 +142,65 @@ If successful should return:
   }
 }
 ```
+
+A BACnet Read Multiple to device `201201` on a post request would look like this.
+![Alt text](/images/rpm.JPG)
+
+With json data in the body with multiple `object_identifier` and `property_identifier`:
+```
+{
+  "device_instance": 201201,
+  "requests": [
+    {
+      "object_identifier": "analog-input,2",
+      "property_identifier": "present-value"
+    },
+    {
+      "object_identifier": "analog-input,2",
+      "property_identifier": "units"
+    },
+    {
+      "object_identifier": "analog-input,2",
+      "property_identifier": "description"
+    },
+    {
+      "object_identifier": "analog-value,301",
+      "property_identifier": "present-value"
+    },
+    {
+      "object_identifier": "analog-input,301",
+      "property_identifier": "units"
+    },
+    {
+      "object_identifier": "analog-value,301",
+      "property_identifier": "description"
+    }
+  ]
+}
+```
+
+If successful should return:
+```bash
+{
+  "success": true,
+  "message": "BACnet write request successfully invoked",
+  "data": {
+    "device_instance": 201201,
+    "object_identifier": "analog-value,301",
+    "property_identifier": "present-value",
+    "written_value": 10,
+    "priority": 10
+  }
+}
+```
+
+
 </details>
 
 
 TODO on implementing future BACnet features:
  - [ ] whois POST request for a range of instance ID's
- - [ ] read multiple request
+ - [x] read multiple request
  - [ ] point discovery
  - [ ] who is router-to-network
  - [ ] read point proirity array
