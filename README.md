@@ -1,7 +1,7 @@
 # bacpypes3RcpServer
 
 
-This is a dedicated RPC server BACnet app with a web UI that also has "rest like" features to read and write BACnet data to and from a building automation system (BAS) or some sort of BACnet device operating on a LAN inside a building. This has been tested on Linux with the CLI interface. Supports tls and Basic Auth through the Fast API web framework. This Linux app is meant to run on a intranet or edge environment behind the firewall along side typical operations technology (OT).
+This is a dedicated rest API or RPC-like Linux web app server that can interact with a BACnet control system on a local area network (LAN) or intranet inside a building. Supports tls and Basic Auth through the Python Fast API web framework and all BACnet features are handled by the bacpypes3 Python BACnet stack. FastAPI supports Swagger UI out-of-the-box (see tutorials below), which this app fully leverages. This feature can be incredibly useful for poking and prodding an unknown BACnet system within a building. For convenience, IoT edge devices can request data from the app at regular intervals via REST API without the need to delve into any BACnet stack setup.
 
 ## Setup Python packages use virtual environment if desired.
 ```bash
