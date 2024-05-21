@@ -54,7 +54,7 @@ When the app starts successfully dial into the built in Swagger UI feature of Fa
 </details>
 
 <details>
-  <summary>Read Prop Tutorial via Swagger UI</summary>
+  <summary>Whois Tutorial via Swagger UI</summary>
 
 Test if the BACnet device responds to a `whois` for the devices BACnet instance ID.
 ![Alt text](/images/who_is.JPG)
@@ -70,6 +70,11 @@ If successful should return:
   }
 ]
 ```
+
+</details>
+
+<details>
+  <summary>Read Prop Tutorial via Swagger UI</summary>
 
 Read request to device `201201 analog-value 301 present-value` which is a temperature sensor.
 
@@ -238,7 +243,7 @@ come back as `error` but if the property does exist it will return a `value`.
 </details>
 
 <details>
-  <summary>Global BACnet `Whois` between range of instance ID's Tutorial via Swagger UI</summary>
+  <summary>Global BACnet Whois between range of instance ID's Tutorial via Swagger UI</summary>
 
 A global BACnet `Whois` between range of instance ID's.
 ![Alt text](/images/who_is_range.JPG)
