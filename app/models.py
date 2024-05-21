@@ -1,11 +1,26 @@
 from pydantic import BaseModel, conint, Field, ValidationError, field_validator
 from typing import Union, Optional, List
 from bacpypes3.primitivedata import PropertyIdentifier, ObjectType
+from fastapi import HTTPException
+import math
+
+def nan_or_inf_check(encoded_value):
+    if isinstance(encoded_value, float):
+        if math.isnan(encoded_value):
+            return "NaN"
+        elif math.isinf(encoded_value):
+            return "Inf" if encoded_value > 0 else "-Inf"
+    return encoded_value
 
 class BaseResponse(BaseModel):
     success: bool
     message: str
     data: dict = None
+
+class DeviceInstanceRange(BaseModel):
+    start_instance: conint(ge=0, le=4194303) = Field(..., description="The start of the BACnet device instance range.")
+    end_instance: conint(ge=0, le=4194303) = Field(..., description="The end of the BACnet device instance range.")
+
 
 class WritePropertyRequest(BaseModel):
     device_instance: conint(ge=0, le=4194303) = Field(...)
@@ -40,8 +55,6 @@ class WritePropertyRequest(BaseModel):
 
         return v
 
-
-
 class ReadMultiplePropertiesRequest(BaseModel):
     object_identifier: str
     property_identifier: str
@@ -75,3 +88,13 @@ class ReadMultiplePropertiesRequest(BaseModel):
 class ReadMultiplePropertiesRequestWrapper(BaseModel):
     device_instance: conint(ge=0, le=4194303) = Field(...)
     requests: List[ReadMultiplePropertiesRequest]
+
+class DeviceInstanceValidator(BaseModel):
+    device_instance: conint(ge=0, le=4194303) = Field(..., description="The device instance ID like '201201' for example")
+
+    @classmethod
+    def validate_instance(cls, device_instance: int):
+        try:
+            return cls(device_instance=device_instance).device_instance
+        except ValidationError as e:
+            raise HTTPException(status_code=400, detail=e.errors())

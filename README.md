@@ -237,9 +237,44 @@ come back as `error` but if the property does exist it will return a `value`.
 ```
 </details>
 
+<details>
+  <summary>Global BACnet `Whois` between range of instance ID's Tutorial via Swagger UI</summary>
+
+A global BACnet `Whois` between range of instance ID's.
+![Alt text](/images/who_is_range.JPG)
+
+With json data in the body:
+```
+{
+  "start_instance": 1,
+  "end_instance": 300000
+}
+```
+
+
+If successful, the response will include known devices, such as the two on my test bench. Please note that this command is intended only for setup purposes of IoT or Building Automation Systems (BAS). It should not be used at short intervals, as it can cause significant disruptions on BACnet systems and potentially cause some devices to go offline. Use this command with caution. If it must be used regularly for security or device health checks, it should not be executed more frequently than once per hour. In BAS contracting, this command is primarily used during the setup phase to gather device configurations for a building automation system.
+```bash
+[
+  {
+    "i-am-device-identifier": "device,201201",
+    "max-apdu-length-accepted": 286,
+    "segmentation-supported": "no-segmentation",
+    "vendor-id": 11
+  },
+  {
+    "i-am-device-identifier": "device,201202",
+    "max-apdu-length-accepted": 286,
+    "segmentation-supported": "no-segmentation",
+    "vendor-id": 11
+  }
+]
+```
+
+</details>
+
 
 TODO on implementing future BACnet features:
- - [ ] whois POST request for a range of instance ID's
+ - [x] whois POST request for a range of instance ID's
  - [x] read multiple request
  - [ ] point discovery
  - [ ] who is router-to-network

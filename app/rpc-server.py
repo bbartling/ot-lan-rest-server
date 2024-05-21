@@ -16,7 +16,13 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from bacpypes3.debugging import ModuleLogger
 from bacpypes3.argparse import SimpleArgumentParser
 from bacpypes3.pdu import Address, GlobalBroadcast
-from bacpypes3.primitivedata import Atomic, ObjectIdentifier, Null, PropertyIdentifier, ObjectType
+from bacpypes3.primitivedata import (
+    Atomic,
+    ObjectIdentifier,
+    Null,
+    PropertyIdentifier,
+    ObjectType,
+)
 from bacpypes3.constructeddata import Sequence, AnyAtomic, Array, List as BacpypesList
 from bacpypes3.apdu import ErrorRejectAbortNack, PropertyReference, ErrorType
 from bacpypes3.app import Application
@@ -29,7 +35,15 @@ from bacpypes3.json.util import (
 
 from bacpypes3.vendor import get_vendor_info
 
-from models import BaseResponse, WritePropertyRequest, ReadMultiplePropertiesRequest, ReadMultiplePropertiesRequestWrapper
+from models import (
+    BaseResponse,
+    WritePropertyRequest,
+    ReadMultiplePropertiesRequest,
+    ReadMultiplePropertiesRequestWrapper,
+    DeviceInstanceValidator,
+    nan_or_inf_check, 
+    DeviceInstanceRange
+)
 
 
 # some debugging
@@ -45,7 +59,10 @@ def get_current_username(credentials: HTTPBasicCredentials = Depends(HTTPBasic()
     correct_username = os.getenv("BASIC_AUTH_USERNAME", "default_username")
     correct_password = os.getenv("BASIC_AUTH_PASSWORD", "default_password")
 
-    if credentials.username == correct_username and credentials.password == correct_password:
+    if (
+        credentials.username == correct_username
+        and credentials.password == correct_password
+    ):
         return credentials.username
     else:
         raise HTTPException(
@@ -55,16 +72,9 @@ def get_current_username(credentials: HTTPBasicCredentials = Depends(HTTPBasic()
         )
 
 
-def nan_or_inf_check(encoded_value):
-    if isinstance(encoded_value, float):
-        if math.isnan(encoded_value):
-            return "NaN"
-        elif math.isinf(encoded_value):
-            return "Inf" if encoded_value > 0 else "-Inf"
-    return encoded_value
-
-
-async def _read_property(device_instance: int, object_identifier: str, property_identifier: str):
+async def _read_property(
+    device_instance: int, object_identifier: str, property_identifier: str
+):
     _log.debug("_read_property %r %r", device_instance, object_identifier)
     global service
 
@@ -93,13 +103,18 @@ async def _read_property(device_instance: int, object_identifier: str, property_
         encoded_value = extendedlist_to_json_list(property_value)
     else:
         return f"JSON encoding: {property_value}"
-    
+
     encoded_value = nan_or_inf_check(encoded_value)
     return property_identifier, encoded_value
 
 
-async def _write_property(device_instance: int, object_identifier: ObjectIdentifier,
-                          property_identifier: str, value: str, priority: int = -1):
+async def _write_property(
+    device_instance: int,
+    object_identifier: ObjectIdentifier,
+    property_identifier: str,
+    value: str,
+    priority: int = -1,
+):
     _log.debug(f" Write Prop Device Instance: {device_instance}")
     _log.debug(f" Write Prop Object Identifier: {object_identifier}")
     _log.debug(f" Write Prop Property Identifier: {property_identifier}")
@@ -108,7 +123,9 @@ async def _write_property(device_instance: int, object_identifier: ObjectIdentif
     _log.debug(f" Write Prop Priority: {priority}")
 
     device_address = await get_device_address(device_instance)
-    property_identifier, property_array_index = parse_property_identifier(property_identifier)
+    property_identifier, property_array_index = parse_property_identifier(
+        property_identifier
+    )
     if value == "null":
         _log.debug(f" Null hit! {type(value)}")
         if priority is None:
@@ -123,8 +140,12 @@ async def _write_property(device_instance: int, object_identifier: ObjectIdentif
 
     try:
         response = await service.write_property(
-            device_address, object_identifier, property_identifier, value,
-            property_array_index, priority
+            device_address,
+            object_identifier,
+            property_identifier,
+            value,
+            property_array_index,
+            priority,
         )
         _log.debug("    - response: %r", response)
         return response
@@ -155,36 +176,22 @@ def parse_property_identifier(property_identifier: str):
     if not property_index_match:
         return "Property specification incorrect"
     property_identifier, property_array_index = property_index_match.groups()
-    property_array_index = int(property_array_index) if property_array_index is not None else None
+    property_array_index = (
+        int(property_array_index) if property_array_index is not None else None
+    )
     return property_identifier, property_array_index
 
 
-async def validate_object_identifier(
-    object_identifier: str = Path(..., description="Bacpypes3 format for obj id is 'analog-input,2' for example")
-):
-    try:
-        WritePropertyRequest.validate_object_identifier(object_identifier)
-        return object_identifier
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+async def perform_who_is(start_instance: int, end_instance: int, address: Optional[str] = None):
+    global service
 
+    destination: Address = Address(address) if address else GlobalBroadcast()
+    _log.debug("    - destination: %r", destination)
 
-async def validate_property_identifier(
-    property_identifier: str = Query("present-value", description="Default prop id of 'present-value' is inserted")
-):
-    try:
-        if property_identifier:
-            WritePropertyRequest.validate_property_identifier(property_identifier)
-        return property_identifier
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    i_ams = await service.who_is(start_instance, end_instance, destination)
 
-
-def validate_device_instance(
-    device_instance: int = Path(..., ge=0, le=4194303, description="The device instance ID like '201201' for example")
-):
-    return device_instance
-
+    result = [sequence_to_json(i_am) for i_am in i_ams]
+    return result
 
 
 @asynccontextmanager
@@ -226,33 +233,42 @@ async def config(username: str = Depends(get_current_username)):
 
 
 @app.get("/bacnet/whois/{device_instance}")
-async def who_is(device_instance: int = Depends(validate_device_instance),
-                 address: Optional[str] = None, 
-                 username: str = Depends(get_current_username)):
+async def who_is(
+    device_instance: int = Depends(DeviceInstanceValidator.validate_instance),
+    address: Optional[str] = None,
+    username: str = Depends(get_current_username),
+):
     _log.debug("who_is %r address=%r", device_instance, address)
-    global service
-
-    destination: Address = Address(address) if address else GlobalBroadcast()
-    _log.debug("    - destination: %r", destination)
-
-    i_ams = await service.who_is(device_instance, device_instance, destination)
-
-    result = [sequence_to_json(i_am) for i_am in i_ams]
+    result = await perform_who_is(device_instance, device_instance, address)
     return result
 
 
 @app.get("/bacnet/{device_instance}/{object_identifier}/")
 async def read_bacnet_property(
-    device_instance: int = Depends(validate_device_instance),
-    object_identifier: str = Depends(validate_object_identifier),
-    property_identifier: str = Depends(validate_property_identifier), 
-    username: str = Depends(get_current_username)
+    device_instance: int = Depends(DeviceInstanceValidator.validate_instance),
+    object_identifier: str = Path(
+        ..., description="Bacpypes3 format for obj id is 'analog-input,2' for example"
+    ),
+    property_identifier: str = Query(
+        "present-value", description="Default prop id of 'present-value' is inserted"
+    ),
+    username: str = Depends(get_current_username),
 ):
-    _log.debug(" read - %r %r %r", device_instance, object_identifier, property_identifier)
+    try:
+        WritePropertyRequest.validate_object_identifier(object_identifier)
+        WritePropertyRequest.validate_property_identifier(property_identifier)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    _log.debug(
+        " read - %r %r %r", device_instance, object_identifier, property_identifier
+    )
 
     read_result = None
     try:
-        read_result = await _read_property(device_instance, object_identifier, property_identifier)
+        read_result = await _read_property(
+            device_instance, object_identifier, property_identifier
+        )
 
         if isinstance(read_result, tuple):
             _, encoded_value = read_result
@@ -263,10 +279,7 @@ async def read_bacnet_property(
             message = read_result
     except Exception as e:
         _log.error(f"Unexpected error during read operation: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=read_result
-        )
+        raise HTTPException(status_code=500, detail=read_result)
 
     response_data = {
         "device_instance": device_instance,
@@ -275,24 +288,24 @@ async def read_bacnet_property(
         "read_result": encoded_value,
     }
 
-    response = BaseResponse(
-        success=success,
-        message=message,
-        data=response_data
-    )
+    response = BaseResponse(success=success, message=message, data=response_data)
     return response
 
 
 @app.post("/bacnet/write", response_model=BaseResponse)
-async def bacnet_write_property(request_body: WritePropertyRequest, request: Request, username: str = Depends(get_current_username)):
+async def bacnet_write_property(
+    request_body: WritePropertyRequest,
+    request: Request,
+    username: str = Depends(get_current_username),
+):
     request = await request.json()
     _log.debug(f"request Parsed BACnet POST data: {request}")
 
-    device_instance = request['device_instance']
-    object_identifier = request['object_identifier']
-    property_identifier = request['property_identifier']
-    value = request['value']
-    priority = request['priority']
+    device_instance = request["device_instance"]
+    object_identifier = request["object_identifier"]
+    property_identifier = request["property_identifier"]
+    value = request["value"]
+    priority = request["priority"]
 
     _log.debug(f" write - Device Instance: {device_instance}")
     _log.debug(f" write - Object Identifier: {object_identifier}")
@@ -306,7 +319,7 @@ async def bacnet_write_property(request_body: WritePropertyRequest, request: Req
             object_identifier=object_identifier,
             property_identifier=property_identifier,
             value=value,
-            priority=priority
+            priority=priority,
         )
 
         if write_result is None:
@@ -317,35 +330,27 @@ async def bacnet_write_property(request_body: WritePropertyRequest, request: Req
             message = write_result
     except Exception as e:
         _log.error(f"Unexpected error during write operation: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=write_result
-        )
+        raise HTTPException(status_code=500, detail=write_result)
 
     response_data = {
         "device_instance": device_instance,
         "object_identifier": object_identifier,
         "property_identifier": property_identifier,
         "written_value": value,
-        "priority": priority
+        "priority": priority,
     }
 
-    response = BaseResponse(
-        success=success,
-        message=message,
-        data=response_data
-    )
+    response = BaseResponse(success=success, message=message, data=response_data)
     return response
-    
+
 
 @app.post("/bacnet/read-multiple", response_model=BaseResponse)
 async def bacnet_read_multiple_properties(
     request_body: ReadMultiplePropertiesRequestWrapper,
     request: Request,
-    username: str = Depends(get_current_username)
+    username: str = Depends(get_current_username),
 ):
-
-    address = request_body.device_instance
+    address = DeviceInstanceValidator.validate_instance(request_body.device_instance)
     _log.debug(f" rpm - for address: {address}")
     _log.debug(f" rpm - with properties: {request_body.requests}")
 
@@ -354,7 +359,7 @@ async def bacnet_read_multiple_properties(
     for req in request_body.requests:
         args_list.append(req.object_identifier)
         args_list.append(req.property_identifier)
-    
+
     # Log the transformed list
     _log.debug(f" rpm - Transformed args_list: {args_list}")
 
@@ -370,7 +375,7 @@ async def bacnet_read_multiple_properties(
         device_info = await get_device_address(address)
         vendor_info = get_vendor_info(0)
         bacnet_address = device_info
-        
+
     _log.debug(f" rpm - device_info: {device_info}")
     _log.debug(f" rpm - bacnet_address: {bacnet_address}")
 
@@ -382,7 +387,11 @@ async def bacnet_read_multiple_properties(
         object_class = vendor_info.get_object_class(object_identifier[0])
         if not object_class:
             _log.debug(f" rpm - unrecognized object type: {object_identifier}")
-            return BaseResponse(success=False, message=f"BACnet rpm failed - unrecognized object type: {object_identifier}", data=None)
+            return BaseResponse(
+                success=False,
+                message=f"BACnet rpm failed - unrecognized object type: {object_identifier}",
+                data=None,
+            )
 
         # save this as a parameter
         parameter_list.append(object_identifier)
@@ -395,7 +404,7 @@ async def bacnet_read_multiple_properties(
                 vendor_info=vendor_info,
             )
 
-            #_log.debug(" rpm - property_reference: %r", property_reference)
+            # _log.debug(" rpm - property_reference: %r", property_reference)
 
             if property_reference.propertyIdentifier not in (
                 PropertyIdentifier.all,
@@ -405,7 +414,7 @@ async def bacnet_read_multiple_properties(
                 property_type = object_class.get_property_type(
                     property_reference.propertyIdentifier
                 )
-                #_log.debug(" rpm - property_type: %r", property_type)
+                # _log.debug(" rpm - property_type: %r", property_type)
                 _log.debug(
                     " rpm - property_reference.propertyIdentifier: %r",
                     property_reference.propertyIdentifier,
@@ -414,7 +423,11 @@ async def bacnet_read_multiple_properties(
                     _log.debug(
                         f" rpm - unrecognized property: {property_reference.propertyIdentifier}"
                     )
-                    return BaseResponse(success=False, message=f"BACnet rpm failed - unrecognized property: {property_reference.propertyIdentifier}", data=None)
+                    return BaseResponse(
+                        success=False,
+                        message=f"BACnet rpm failed - unrecognized property: {property_reference.propertyIdentifier}",
+                        data=None,
+                    )
 
             # save this as a parameter
             property_reference_list.append(property_reference)
@@ -428,17 +441,25 @@ async def bacnet_read_multiple_properties(
 
     if not parameter_list:
         _log.debug(" rpm - object identifier expected")
-        return BaseResponse(success=False, message=f"BACnet rpm failed - object identifier expected", data=None)
+        return BaseResponse(
+            success=False,
+            message=f"BACnet rpm failed - object identifier expected",
+            data=None,
+        )
 
     try:
         response = await service.read_property_multiple(bacnet_address, parameter_list)
     except ErrorRejectAbortNack as err:
         _log.debug(" rpm - exception: %r", err)
-        return BaseResponse(success=False, message=f"BACnet rpm failed: {err}", data=None)
+        return BaseResponse(
+            success=False, message=f"BACnet rpm failed: {err}", data=None
+        )
 
     except ErrorRejectAbortNack as err:
         _log.debug(f"rpm - exception: {err}")
-        return BaseResponse(success=False, message=f"BACnet rpm failed: {err}", data=None)
+        return BaseResponse(
+            success=False, message=f"BACnet rpm failed: {err}", data=None
+        )
 
     rpm_result = []
     try:
@@ -462,17 +483,21 @@ async def bacnet_read_multiple_properties(
                     _log.debug(
                         f" rpm - {property_value.errorClass}, {property_value.errorCode}"
                     )
-                    rpm_result.append({
-                        "object_identifier": f"{object_identifier}",
-                        "property_identifier": f"{property_identifier}",
-                        "error": f"{property_value.errorClass}, {property_value.errorCode}"
-                    })
+                    rpm_result.append(
+                        {
+                            "object_identifier": f"{object_identifier}",
+                            "property_identifier": f"{property_identifier}",
+                            "error": f"{property_value.errorClass}, {property_value.errorCode}",
+                        }
+                    )
                 else:
-                    rpm_result.append({
-                        "object_identifier": f"{object_identifier}",
-                        "property_identifier": f"{property_identifier}",
-                        "value": f"{property_value}"
-                    })
+                    rpm_result.append(
+                        {
+                            "object_identifier": f"{object_identifier}",
+                            "property_identifier": f"{property_identifier}",
+                            "value": f"{property_value}",
+                        }
+                    )
 
         if response:
             success = True
@@ -483,8 +508,7 @@ async def bacnet_read_multiple_properties(
     except Exception as e:
         _log.error(f"Unexpected error during rpm operation: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500,
-            detail="Unexpected error during rpm operation"
+            status_code=500, detail="Unexpected error during rpm operation"
         )
 
     response_data = {
@@ -492,12 +516,19 @@ async def bacnet_read_multiple_properties(
         "requests": rpm_result,
     }
 
-    return BaseResponse(
-        success=success,
-        message=message,
-        data=response_data
-    )
+    return BaseResponse(success=success, message=message, data=response_data)
 
+
+@app.post("/bacnet/whois")
+async def who_is_range(
+    range_request: DeviceInstanceRange,
+    address: Optional[str] = None,
+    username: str = Depends(get_current_username),
+):
+    _log.debug("who_is_range %r address=%r", range_request, address)
+    result = await perform_who_is(range_request.start_instance, range_request.end_instance, address)
+    return result
+    
 
 async def main() -> None:
     global app, args
@@ -538,13 +569,13 @@ async def main() -> None:
         "--ssl-certfile",
         type=str,
         help="Path to the SSL certificate file",
-        default="./certs/certificate.pem"
+        default="./certs/certificate.pem",
     )
     parser.add_argument(
         "--ssl-keyfile",
         type=str,
         help="Path to the SSL key file",
-        default="./certs/private.key"
+        default="./certs/private.key",
     )
 
     args = parser.parse_args()
@@ -572,6 +603,7 @@ async def main() -> None:
 
     server = uvicorn.Server(config)
     await server.serve()
+
 
 if __name__ == "__main__":
     asyncio.run(main())
