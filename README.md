@@ -20,9 +20,11 @@ $ python app/rpc-server.py --host 0.0.0.0 --port 8080  --debug
 $ python app/rpc-server.py --basic-auth-username=myusername --basic-auth-password=mypassword
 ```
 
-If running your app on http without tls support log into swagger UI on:
-http://192.168.0.102:8000/docs
+If running your app on **http without the tls arg** log into swagger UI on `http` something like:
+* http://xxx.xxx.xxx.xxx:8000/docs
 
+Else if running your app on **https with tls arg** log into swagger UI on `https` something like:
+* https://xxx.xxx.xxx.xxx:8000/docs
 
 ## Optional TLS support
 To ecprypte http web app TCP traffic only, not BACnet which runs on UDP... Generate certs with running the bash script inside the `scripts` directory. Step through the Q/A process for generating the self signed certs about inputing country code, organization, and contact info.
@@ -32,20 +34,16 @@ $ ./scripts/generate_certs.sh
 ```
 
 #### Example arg to run app with transport layer security (TLS)
+* Step through the Q/A to setup your certs with openssl however you want.
 ```bash
 $ python app/rpc-server.py --tls --debug
 ```
 
-If running your app with tls support log into the Fast API swagger UI:
-https://192.168.0.102:5000/docs
-
-
-
-Proceed to then enter your credentials for the `Authorize` in the Swagger UI.
-
 
 <details>
   <summary>Tutorial for the Fast API Swagger UI</summary>
+
+If you are using credentials on your app with args like `--basic-auth-username=myusername --basic-auth-password=mypassword` on the command line to start the app, proceed to then enter your credentials in green `Authorize` button in the Swagger UI upper right corner else skip this step.
 
 When the app starts successfully dial into the built in Swagger UI feature of Fast API which can be used to test various BACnet commands.
 
