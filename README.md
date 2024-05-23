@@ -241,7 +241,7 @@ come back as `error` but if the property does exist it will return a `value`.
 </details>
 
 <details>
-  <summary>Global BACnet Whois between range of instance ID's Tutorial via Swagger UI</summary>
+  <summary>BACnet Whois across a range of instance ID's Tutorial via Swagger UI</summary>
 
 A global BACnet `Whois` between range of instance ID's.
 ![Alt text](/images/who_is_range.JPG)
@@ -275,16 +275,150 @@ If successful, the response will include known devices, such as the two on my te
 
 </details>
 
+<details>
+  <summary>Device Point Discovery Tutorial via Swagger UI</summary>
 
-TODO on implementing future BACnet features:
- - [x] whois POST request for a range of instance ID's
- - [x] read multiple request
- - [ ] point discovery
- - [ ] who is router-to-network
+Test for a BACnet point discovery process of a BACnet device by instance ID.
+![Alt text](/images/point_discovery.JPG)
+
+If successful, the operation should return all the device objects or points as shown below. Please note that this process may take a while depending on the device, the number of configured points, and the network. Additionally, if the BACnet device supports a BACnet service called object-list, the operation will be faster. If object-list is not supported, the application will read one point at a time, resulting in a longer processing time. However, the response will remain consistent regardless of the method used.
+
+```bash
+{
+  "success": true,
+  "message": "Point discovery successful",
+  "data": {
+    "device_instance_id": 201201,
+    "point_object_details": [
+      {
+        "identifier": "analog-input 1",
+        "description": "tempUoOne10k"
+      },
+      {
+        "identifier": "analog-input 2",
+        "description": "tempUoTwoBalco"
+      },
+      {
+        "identifier": "analog-input 3",
+        "description": "tempUoThreeBalco"
+      },
+      {
+        "identifier": "analog-input 17",
+        "description": "S-LK"
+      },
+      {
+        "identifier": "analog-value 806",
+        "description": "RmDiff"
+      },
+      {
+        "identifier": "analog-value 301",
+        "description": "Oat"
+      },
+      {
+        "identifier": "analog-value 302",
+        "description": "RmTmpSpt"
+      },
+      {
+        "identifier": "analog-value 300",
+        "description": "RmTmp"
+      },
+      {
+        "identifier": "binary-output 1",
+        "description": "UhCmd"
+      },
+      {
+        "identifier": "binary-value 806",
+        "description": "GlblHtgDsbl"
+      },
+      {
+        "identifier": "device 201201",
+        "description": "TEST1"
+      },
+      {
+        "identifier": "file 1",
+        "description": "Firmware"
+      },
+      {
+        "identifier": "file 32",
+        "description": "Application Database"
+      },
+      {
+        "identifier": "multi-state-value 10101",
+        "description": "tempUoOne10k:Type"
+      },
+      {
+        "identifier": "analog-value 10106",
+        "description": "tempUoOne10k:Filter"
+      },
+      {
+        "identifier": "analog-value 10107",
+        "description": "tempUoOne10k:Offset"
+      },
+      {
+        "identifier": "multi-state-value 10201",
+        "description": "tempUoTwoBalco:Type"
+      },
+      {
+        "identifier": "analog-value 10206",
+        "description": "tempUoTwoBalco:Filter"
+      },
+      {
+        "identifier": "analog-value 10207",
+        "description": "tempUoTwoBalco:Offset"
+      },
+      {
+        "identifier": "multi-state-value 10301",
+        "description": "tempUoThreeBalco:Type"
+      },
+      {
+        "identifier": "analog-value 10306",
+        "description": "tempUoThreeBalco:Filter"
+      },
+      {
+        "identifier": "analog-value 10307",
+        "description": "tempUoThreeBalco:Offset"
+      },
+      {
+        "identifier": "binary-value 12501",
+        "description": "UhCmd:Action"
+      },
+      {
+        "identifier": "analog-value 13313",
+        "description": "S-LK:TempCal"
+      },
+      {
+        "identifier": "analog-value 13332",
+        "description": "S-LK:OvrdTm"
+      },
+      {
+        "identifier": "binary-value 13353",
+        "description": "S-LK:PbOcc"
+      },
+      {
+        "identifier": "analog-value 13354",
+        "description": "S-LK:OvrTimer"
+      }
+    ]
+  }
+}
+```
+
+</details>
+
+
+Project goals:
+ - [x] who-is request
+ - [x] read property request
+ - [x] write property request
+ - [x] read multiple property request
+ - [x] who-is across a range of instance ID's
+ - [x] device point discovery
+ - [ ] who-is router-to-network
  - [ ] read point proirity array
- - [ ] read range for BACnet devices that support trend log data
- - [x] create unit tests
+ - [ ] make a BACnet device toml config file
+ - [x] create unit tests for Fast API Pydantic models
  - [x] add pydantic model validation for server requests
+ - [ ] read range for BACnet devices that support trend log data
  - [ ] add ModBus support which would be used to read a utility meter only
  
 ## License
