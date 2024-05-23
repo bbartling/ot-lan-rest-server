@@ -9,6 +9,7 @@ from app.models import (
     nan_or_inf_check,
 )
 
+
 @pytest.mark.parametrize(
     "device_instance, object_identifier, property_identifier, value, priority, expected_exception",
     [

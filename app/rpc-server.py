@@ -25,6 +25,7 @@ from bacpypes3.primitivedata import (
 )
 from bacpypes3.constructeddata import Sequence, AnyAtomic, Array, List as BacpypesList
 from bacpypes3.apdu import ErrorRejectAbortNack, PropertyReference, ErrorType
+from bacpypes3.apdu import AbortReason, AbortPDU, ErrorRejectAbortNack
 from bacpypes3.app import Application
 from bacpypes3.settings import settings
 from bacpypes3.json.util import (
@@ -182,16 +183,50 @@ def parse_property_identifier(property_identifier: str):
     return property_identifier, property_array_index
 
 
-async def perform_who_is(start_instance: int, end_instance: int, address: Optional[str] = None):
+
+async def perform_who_is(start_instance: int, end_instance: int):
     global service
 
-    destination: Address = Address(address) if address else GlobalBroadcast()
-    _log.debug("    - destination: %r", destination)
+    try:
+        i_ams = await service.who_is(start_instance, end_instance)
+        if not i_ams:
+            no_response_str = f"No response(s) on WhoIs start_instance {start_instance} end_instance {end_instance}"
+            _log.error(" - " + no_response_str)
+            return no_response_str
+        
+        result = []
+        for i_am in i_ams:
+            _log.debug("    - i_am: %r", i_am)
 
-    i_ams = await service.who_is(start_instance, end_instance, destination)
+            device_address: Address = i_am.pduSource
+            device_identifier: ObjectIdentifier = i_am.iAmDeviceIdentifier
 
-    result = [sequence_to_json(i_am) for i_am in i_ams]
-    return result
+            _log.debug(f"{device_identifier} @ {device_address}")
+
+            try:
+                device_description: str = await service.read_property(
+                    device_address, device_identifier, "description"
+                )
+                _log.debug(f"    description: {device_description}")
+            except ErrorRejectAbortNack as err:
+                # some devices don't support the "description" property
+                device_description = f"Error: {err}"
+                _log.error(f"{device_identifier} description error: {err}")
+
+            result.append({
+                "i-am-device-identifier": f"{device_identifier}",
+                "device-address": f"{device_address}",
+                "device-description": device_description,
+                "max-apdu-length-accepted": i_am.maxAPDULengthAccepted,
+                "segmentation-supported": str(i_am.segmentationSupported),
+                "vendor-id": i_am.vendorID,
+            })
+
+        return result
+
+    except Exception as e:
+        _log.error(f"Exception in perform_who_is: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 
 @asynccontextmanager
@@ -213,7 +248,6 @@ async def http_exception_handler(request: Request, exc: HTTPException):
         content={"success": False, "message": str(exc.detail), "data": None},
     )
 
-
 @app.get("/")
 async def hello_world(username: str = Depends(get_current_username)):
     return RedirectResponse("/docs")
@@ -221,7 +255,6 @@ async def hello_world(username: str = Depends(get_current_username)):
 
 @app.get("/bacpypes/config")
 async def config(username: str = Depends(get_current_username)):
-    _log.debug("config")
     global service
 
     object_list = []
@@ -235,12 +268,27 @@ async def config(username: str = Depends(get_current_username)):
 @app.get("/bacnet/whois/{device_instance}")
 async def who_is(
     device_instance: int = Depends(DeviceInstanceValidator.validate_instance),
-    address: Optional[str] = None,
     username: str = Depends(get_current_username),
 ):
-    _log.debug("who_is %r address=%r", device_instance, address)
-    result = await perform_who_is(device_instance, device_instance, address)
-    return result
+    _log.debug("who_is %r device_instance=%r", device_instance)
+
+    result = await perform_who_is(device_instance, device_instance)
+    _log.debug(" result - result=%r", result)
+
+    if result:
+        success = True
+        message = "BACnet WhoIs request successfully invoked"
+    else:
+        success = False
+        message = i_ams
+
+    response_data = {
+        "device_instance": device_instance,
+        "result": result,
+    }
+
+    response = BaseResponse(success=success, message=message, data=response_data)
+    return response
 
 
 @app.get("/bacnet/{device_instance}/{object_identifier}/")
@@ -522,13 +570,168 @@ async def bacnet_read_multiple_properties(
 @app.post("/bacnet/whois")
 async def who_is_range(
     range_request: DeviceInstanceRange,
-    address: Optional[str] = None,
     username: str = Depends(get_current_username),
 ):
-    _log.debug("who_is_range %r address=%r", range_request, address)
-    result = await perform_who_is(range_request.start_instance, range_request.end_instance, address)
-    return result
+
+    _log.debug(" - who_is range post %r %r", range_request.start_instance, range_request.end_instance)
+
+    result = await perform_who_is(range_request.start_instance, range_request.end_instance)
+    _log.debug(" result - result=%r", result)
+
+    if result:
+        success = True
+        message = "BACnet WhoIs request successfully invoked"
+    else:
+        success = False
+        message = i_ams
+
+    response_data = {
+        "result": result,
+    }
+
+    response = BaseResponse(success=success, message=message, data=response_data)
+    return response
     
+
+@app.get("/bacnet/point-discovery/")
+async def point_discovery(
+    device_instance: int = Depends(DeviceInstanceValidator.validate_instance)
+):
+    """
+    Read the entire object list from a device at once, or if that fails, read
+    the object identifiers one at a time.
+    """
+    try:
+        i_ams = await service.who_is(device_instance, device_instance)
+        if not i_ams:
+            return
+
+        i_am = i_ams[0]
+        if _debug:
+            _log.debug("    - i_am: %r", i_am)
+
+        device_address: Address = i_am.pduSource
+        device_identifier: ObjectIdentifier = i_am.iAmDeviceIdentifier
+        vendor_info = get_vendor_info(i_am.vendorID)
+
+        _log.debug("    - device_address: %r", device_address)
+        _log.debug("    - device_identifier: %r", device_identifier)
+        _log.debug("    - vendor_info: %r", vendor_info)
+
+        object_list = []
+        names_list = []
+
+        # final json response
+        details = []
+
+        try:
+            object_list = await service.read_property(
+                device_address, device_identifier, "object-list"
+            )
+            _log.debug("object_list - %r", object_list)
+
+        except AbortPDU as err:
+            if err.apduAbortRejectReason != AbortReason.segmentationNotSupported:
+                _log.error(f"{device_identifier} object-list abort: {err}\n")
+                raise HTTPException(status_code=500, detail="Error reading object-list")
+
+        except ErrorRejectAbortNack as err:
+            _log.error(f"{device_identifier} object-list error/reject: {err}\n")
+            raise HTTPException(status_code=500, detail="ErrorRejectAbortNack reading object-list")
+
+        if isinstance(object_list, str):
+            if "no object class" in object_list:
+                _log.debug("Empty Object List Will Attempt Reading One By One")
+                _log.debug("This may take a minute....")
+
+                try:
+                    # Read the length
+                    object_list_length = await service.read_property(
+                        device_address,
+                        device_identifier,
+                        "object-list",
+                        array_index=0,
+                    )
+
+                    # Ensure object_list_length is an integer
+                    try:
+                        object_list_length = int(object_list_length)
+                    except ValueError:
+                        _log.error(f"Invalid object list length: {object_list_length}")
+                        raise HTTPException(status_code=500, detail="Invalid object list length")
+
+                    _log.debug(f"object_list_length - {object_list_length}")
+
+                    # Read each element individually
+                    for i in range(object_list_length):
+                        object_identifier = await service.read_property(
+                            device_address,
+                            device_identifier,
+                            "object-list",
+                            array_index=i + 1,
+                        )
+                        object_list.append(object_identifier)
+
+                except ErrorRejectAbortNack as err:
+                    _log.error(f"{device_identifier} object-list length error/reject: {err}\n")
+                    raise HTTPException(status_code=500, detail="Error reading object-list length")
+
+        # Loop through each object and attempt to tease out the name
+        for object_identifier in object_list:
+            object_class = vendor_info.get_object_class(object_identifier[0])
+
+            _log.debug("    - object_class: %r", object_class)
+
+            if object_class is None:
+                _log.error(f"unknown object type: {object_identifier}\n")
+                continue
+
+            _log.debug(f"    {object_identifier}:")
+
+            try:
+                property_value = await service.read_property(
+                    device_address, object_identifier, "object-name"
+                )
+                _log.debug(f" {object_identifier}: {property_value}")
+
+                property_value_str = f"{property_value}"
+                names_list.append(property_value_str)
+
+            except bacpypes3.errors.InvalidTag as err:
+                _log.error(f"Invalid Tag Error on point: {device_identifier}")
+                names_list.append("ERROR - Delete this row")
+
+            except ErrorRejectAbortNack as err:
+                _log.error(f"{object_identifier} {object_identifier} error: {err}\n")
+
+        _log.debug("    - device_address: %r", device_address)
+        _log.debug("    - object_list: %r", object_list)
+        _log.debug("    - names_list: %r", names_list)
+
+        
+
+        if names_list:
+            success = True
+            message = "BACnet point discovery successfully invoked"
+            response_data = {
+                "device_instance_id": device_instance,
+            "point_object_details": [
+                {"identifier": f"{obj_type} {id}", "description": name}
+                for (obj_type, id), name in zip(object_list, names_list)
+                ]
+            }
+        else:
+            success = False
+            message = "BACnet point discovery failed"
+            response_data = None
+
+    except Exception as e:
+        _log.error(f"Unexpected error during point discovery operation: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Unexpected error during point discovery operation")
+
+    return BaseResponse(success=True, message="Point discovery successful", data=response_data)
+
+
 
 async def main() -> None:
     global app, args
