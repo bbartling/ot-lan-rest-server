@@ -1,23 +1,23 @@
-# bacpypes3RcpServer
+# ot-lan-rest-server
 
 
-This is a dedicated rest API or RPC-like Linux web app server that can interact with a BACnet control system on a local area network (LAN) or intranet inside a building. Supports tls and Basic Auth through the Python Fast API web framework and all BACnet features are handled by the bacpypes3 Python BACnet stack. FastAPI supports Swagger UI out-of-the-box (see tutorials below), which this app fully leverages. This feature can be incredibly useful for poking and prodding an unknown BACnet system within a building. For convenience, IoT edge devices can request data from the app at regular intervals via REST API without the need to delve into any BACnet stack setup.
+This is a dedicated rest API or RPC-like Linux web app server that can interact with control systems on a local operations technology network (LAN) or intranet inside a building. Supports tls and Basic Auth through the Python Fast API web framework and all BACnet features are handled by the bacpypes3 Python BACnet stack. FastAPI supports Swagger UI out-of-the-box (see tutorials below), which this app fully leverages. This feature can be incredibly useful for poking and prodding an unknown BACnet system within a building. For convenience, IoT edge devices can request data from the app at regular intervals via REST API without the need to delve into any BACnet stack setup.
 
 ## Setup Python packages use virtual environment if desired.
 ```bash
-$ python -m pip install bacpypes3 ifaddr fastapi uvicorn
+python -m pip install bacpypes3 ifaddr fastapi uvicorn
 
 ```
 
-#### Example args to run app on http with setting custom `host`, `port`, and `debug` mode.
+#### Example args to run app on http with setting custom `host` and `port`.
 ```bash
-$ python app/rpc-server.py --host 0.0.0.0 --port 8080  --debug
+python app/main.py --host 0.0.0.0 --port 8080
 ```
 
 #### Example args to run app on http with setting Basic Auth username for the app of `myusername` and password of `mypassword`. Default app username and pass is `admin` and `secret` which should be changed for security purposes.
 
 ```bash
-$ python app/rpc-server.py --basic-auth-username=myusername --basic-auth-password=mypassword
+python app/main.py --basic-auth-username=myusername --basic-auth-password=mypassword
 ```
 
 If running your app on **http without the tls arg** log into swagger UI on `http` something like:
@@ -30,13 +30,13 @@ Else if running your app on **https with tls arg** log into swagger UI on `https
 To ecprypte http web app TCP traffic only, not BACnet which runs on UDP... Generate certs with running the bash script inside the `scripts` directory. Step through the Q/A process for generating the self signed certs about inputing country code, organization, and contact info.
 
 ```bash
-$ ./scripts/generate_certs.sh
+./scripts/generate_certs.sh
 ```
 
 #### Example arg to run app with transport layer security (TLS)
 * Step through the Q/A to setup your certs with openssl however you want.
 ```bash
-$ python app/rpc-server.py --tls --debug
+python app/main.py --tls
 ```
 
 
